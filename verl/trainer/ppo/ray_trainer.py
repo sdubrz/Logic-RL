@@ -617,11 +617,23 @@ class RayPPOTrainer(object):
                 timing_raw = {}
 
                 batch: DataProto = DataProto.from_single_dict(batch_dict)  # 追踪一下batch的变化情况
-                print('batch = ', batch.to_string())
+                print('batch = ', batch)
+                """
+                batch =  {  # 打印的不全
+                  batch: TensorDict(
+                  batch_size=torch.Size([4]),
+                no_tensor_batch: {'quiz': array(['A very special island is inhabited only by knights and knaves. Knights always tell the truth, and knaves always lie. You meet 3 inhabitants: Evelyn, Logan, and Alexander. "Logan is a knave," Evelyn mentioned. Logan remarked, "Logan is a knight if and only if Alexander is a knave". "Evelyn is a knight," Alexander claimed. So who is a knight and who is a knave?',
+                """
 
                 # pop those keys for generation
                 gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
-                print('gen_batch = ', gen_batch.to_string())
+                print('gen_batch = ', gen_batch)
+                """
+                gen_batch =  {
+                    batch: TensorDict(
+                    batch_size=torch.Size([4]),
+                    no_tensor_batch: {}
+                """
 
                 with _timer('step', timing_raw):
                     # generate a batch
@@ -633,9 +645,9 @@ class RayPPOTrainer(object):
                                                              dtype=object)
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
-                    print('batch1 = ', batch.to_string())
+                    print('batch1 = ', batch)
                     batch = batch.union(gen_batch_output)
-                    print('batch2 = ', batch.to_string())
+                    print('batch2 = ', batch)
 
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
@@ -644,21 +656,21 @@ class RayPPOTrainer(object):
 
                     # compute global_valid tokens
                     batch.meta_info['global_token_num'] = torch.sum(batch.batch['attention_mask'], dim=-1).tolist()
-                    print('batch3 = ', batch.to_string())
+                    print('batch3 = ', batch)
 
                     if self.use_reference_policy:
                         # compute reference log_prob
                         with _timer('ref', timing_raw):
                             ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
                             batch = batch.union(ref_log_prob)
-                            print('batch4 = ', batch.to_string())
+                            print('batch4 = ', batch)
 
                     # compute values
                     if self.use_critic:
                         with _timer('values', timing_raw):
                             values = self.critic_wg.compute_values(batch)
                             batch = batch.union(values)
-                            print('batch5 = ', batch.to_string())
+                            print('batch5 = ', batch)
 
                     with _timer('adv', timing_raw):
                         # compute scores. Support both model and function-based.
@@ -668,23 +680,23 @@ class RayPPOTrainer(object):
                             # we first compute reward model score
                             reward_tensor = self.rm_wg.compute_rm_score(batch)
                             batch = batch.union(reward_tensor)
-                            print('batch6 = ', batch.to_string())
+                            print('batch6 = ', batch)
 
                         # we combine with rule-based rm
                         reward_tensor = self.reward_fn(batch)
                         batch.batch['token_level_scores'] = reward_tensor
-                        print('batch7 = ', batch.to_string())
+                        print('batch7 = ', batch)
 
                         # compute rewards. apply_kl_penalty if available
                         if not self.config.actor_rollout_ref.actor.use_kl_loss:
                             batch, kl_metrics = apply_kl_penalty(batch,
                                                                  kl_ctrl=self.kl_ctrl,
                                                                  kl_penalty=self.config.algorithm.kl_penalty)
-                            print('batch8 = ', batch.to_string())
+                            print('batch8 = ', batch)
                             metrics.update(kl_metrics)
                         else:
                             batch.batch['token_level_rewards'] = batch.batch['token_level_scores']
-                            print('batch9 = ', batch.to_string())
+                            print('batch9 = ', batch)
 
                         # compute advantages, executed on the driver process
                         batch = compute_advantage(batch,
@@ -692,7 +704,7 @@ class RayPPOTrainer(object):
                                                   gamma=self.config.algorithm.gamma,
                                                   lam=self.config.algorithm.lam,
                                                   num_repeat=self.config.actor_rollout_ref.rollout.n)
-                        print('batch10 = ', batch.to_string())
+                        print('batch10 = ', batch)
 
                     # update critic
                     if self.use_critic:
