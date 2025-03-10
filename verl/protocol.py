@@ -175,11 +175,11 @@ class DataProto:
 
     def to_string(self):
         # 打印内容
-        str = '{\n batch: ' + str(self.batch)
-        str = str + '\n no_tensor_batch: ' + str(self.non_tensor_batch)
-        str = str + '\n meta_info: ' + str(self.meta_info)
-        str = str + '\n}'
-        return str
+        line = '{\n batch: ' + str(self.batch)
+        line = line + '\n no_tensor_batch: ' + str(self.non_tensor_batch)
+        line = line + '\n meta_info: ' + str(self.meta_info)
+        line = line + '\n}'
+        return line
 
     def __post_init__(self):
         # perform necessary checking
