@@ -607,26 +607,35 @@ class RayPPOTrainer(object):
         self.global_steps += 1
 
         for epoch in range(self.config.trainer.total_epochs):
+            if self.global_steps > 1:  # 暂时只跑一个batch
+                    break
             for batch_dict in self.train_dataloader:
+                if self.global_steps > 1:  # 暂时只跑一个batch
+                    break
                 print(f'epoch {epoch}, step {self.global_steps}')
                 metrics = {}
                 timing_raw = {}
 
-                batch: DataProto = DataProto.from_single_dict(batch_dict)
+                batch: DataProto = DataProto.from_single_dict(batch_dict)  # 追踪一下batch的变化情况
+                print('batch = ', batch.to_string())
 
                 # pop those keys for generation
                 gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
+                print('gen_batch = ', gen_batch.to_string())
 
                 with _timer('step', timing_raw):
                     # generate a batch
                     with _timer('gen', timing_raw):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                        print('gen_batch_output = ', gen_batch_output)
 
                     batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],
                                                              dtype=object)
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
+                    print('batch1 = ', batch.to_string())
                     batch = batch.union(gen_batch_output)
+                    print('batch2 = ', batch.to_string())
 
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
@@ -635,18 +644,21 @@ class RayPPOTrainer(object):
 
                     # compute global_valid tokens
                     batch.meta_info['global_token_num'] = torch.sum(batch.batch['attention_mask'], dim=-1).tolist()
+                    print('batch3 = ', batch.to_string())
 
                     if self.use_reference_policy:
                         # compute reference log_prob
                         with _timer('ref', timing_raw):
                             ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
                             batch = batch.union(ref_log_prob)
+                            print('batch4 = ', batch.to_string())
 
                     # compute values
                     if self.use_critic:
                         with _timer('values', timing_raw):
                             values = self.critic_wg.compute_values(batch)
                             batch = batch.union(values)
+                            print('batch5 = ', batch.to_string())
 
                     with _timer('adv', timing_raw):
                         # compute scores. Support both model and function-based.
@@ -656,19 +668,23 @@ class RayPPOTrainer(object):
                             # we first compute reward model score
                             reward_tensor = self.rm_wg.compute_rm_score(batch)
                             batch = batch.union(reward_tensor)
+                            print('batch6 = ', batch.to_string())
 
                         # we combine with rule-based rm
                         reward_tensor = self.reward_fn(batch)
                         batch.batch['token_level_scores'] = reward_tensor
+                        print('batch7 = ', batch.to_string())
 
                         # compute rewards. apply_kl_penalty if available
                         if not self.config.actor_rollout_ref.actor.use_kl_loss:
                             batch, kl_metrics = apply_kl_penalty(batch,
                                                                  kl_ctrl=self.kl_ctrl,
                                                                  kl_penalty=self.config.algorithm.kl_penalty)
+                            print('batch8 = ', batch.to_string())
                             metrics.update(kl_metrics)
                         else:
                             batch.batch['token_level_rewards'] = batch.batch['token_level_scores']
+                            print('batch9 = ', batch.to_string())
 
                         # compute advantages, executed on the driver process
                         batch = compute_advantage(batch,
@@ -676,6 +692,7 @@ class RayPPOTrainer(object):
                                                   gamma=self.config.algorithm.gamma,
                                                   lam=self.config.algorithm.lam,
                                                   num_repeat=self.config.actor_rollout_ref.rollout.n)
+                        print('batch10 = ', batch.to_string())
 
                     # update critic
                     if self.use_critic:
