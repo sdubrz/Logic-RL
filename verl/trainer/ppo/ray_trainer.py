@@ -578,6 +578,12 @@ class RayPPOTrainer(object):
                                                     prefix=logging_prefix)
         metrics.update(global_balance_stats)
 
+    def get_gen_from_api(self, data: DataProto):
+        """
+        从某个API调用获取生成的结果
+        """
+        pass
+
     def fit(self):
         """
         The training loop of PPO.
@@ -606,13 +612,14 @@ class RayPPOTrainer(object):
         # we start from step 1
         self.global_steps += 1
         print_batch = False  # 是否打印batch
+        gen_from_api = False  # 是否从API获取生成的结果
 
         for epoch in range(self.config.trainer.total_epochs):
-            # if self.global_steps > 1:  # 暂时只跑一个batch
-            #         break
+            if self.global_steps > 1:  # 暂时只跑一个batch
+                    break
             for batch_dict in self.train_dataloader:
-                # if self.global_steps > 1:  # 暂时只跑一个batch
-                #     break
+                if self.global_steps > 1:  # 暂时只跑一个batch
+                    break
                 print(f'epoch {epoch}, step {self.global_steps}')
                 metrics = {}
                 timing_raw = {}
@@ -630,6 +637,7 @@ class RayPPOTrainer(object):
                 # pop those keys for generation
                 gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
                 if print_batch:
+                    print('type(gen_batch) = ', type(gen_batch))
                     print('gen_batch = ', gen_batch)
                 """
                 gen_batch =  {
@@ -641,8 +649,14 @@ class RayPPOTrainer(object):
                 with _timer('step', timing_raw):
                     # generate a batch
                     with _timer('gen', timing_raw):
-                        gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
-                        print('gen_batch_output = ', gen_batch_output)
+                        if gen_from_api:
+                            gen_batch_output = self.get_gen_from_api(gen_batch)
+                        else:
+                            gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                        # 从别处收集结果的实验
+                        if print_batch:
+                            print('type(gen_batch_out) = ', type(gen_batch_output))
+                            print('gen_batch_output = ', gen_batch_output)
 
                     batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],
                                                              dtype=object)
