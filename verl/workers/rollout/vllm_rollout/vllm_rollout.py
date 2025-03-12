@@ -67,6 +67,8 @@ class vLLMRollout(BaseRollout):
             **kwargs: train_tp, for Megatron Backend to initialize hybrid engine (zero redundancy) process group
         """
         super().__init__()
+        print('vllm_generate tokenizer = ', tokenizer)
+        self.tokenizer = tokenizer
         self.config = config
         assert not (not config.enforce_eager and config.free_cache_engine), \
             "disable CUDA graph (enforce_eager = False) if free cache engine"
@@ -138,18 +140,26 @@ class vLLMRollout(BaseRollout):
         for key, value in old_sampling_params_args.items():
             setattr(self.sampling_params, key, value)
 
+    def gen_output_from_api(self, idx):
+        # 调用API生成结果
+        pass
+
     @torch.no_grad()
     def generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
         # rebuild vllm cache engine
         print('vllm_generate by')
         print('vllm_generate prompts = ', prompts)
-        print('vllm_generate kwargs = ', kwargs)
+        print('vllm_generate kwargs = ', kwargs)  # 这里传进来的竟然是空的
         if self.config.free_cache_engine:
             self.inference_engine.init_cache_engine()
 
-        idx = prompts.batch['input_ids']  # (bs, prompt_length)
+        idx = prompts.batch['input_ids']  # (bs, prompt_length)   # 这里是词表ID，需要还原为文本
         print('vllm_generate idx = ', idx)
         print('vllm_generate type(idx) = ', type(idx))
+
+        input_texts = self.tokenizer.batch_decode(idx, skip_special_tokens=True)
+        print('vllm_generate input_texts = ', input_texts)
+        print('vllm_generate type(input_texts) = ', type(input_texts))
         # left-padded attention_mask
         attention_mask = prompts.batch['attention_mask']
         position_ids = prompts.batch['position_ids']
@@ -191,8 +201,17 @@ class vLLMRollout(BaseRollout):
 
         # TODO(sgm): disable logprob when recompute_log_prob is enable
         # if n = 1: (bs, response_length) ; if n > 1: (bs * n, response_length)
-        response = output[0].to(idx.device)
+        response = output[0].to(idx.device)  # response也是个词表ID
         log_probs = output[1].to(idx.device)  # 实际上概率没有被用到
+        print('vllm_generate response = ', response)
+        print('vllm_generate type(response) = ', type(response))
+        response_texts = self.tokenizer.batch_decode(response, skip_special_tokens=True)
+        print('vllm_generate response_texts = ', response_texts)
+        print('vllm_generate type(response_texts) = ', type(response_texts))
+        response_list2 = [self.tokenizer.encode(response_text) for response_text in response_texts]
+        response2 = torch.cat(response_list2, dim=0)
+        print('vllm_generate response2 = ', response2)
+        print('vllm_generate type(response2) = ', type(response2))
 
         if response.shape[1] < self.config.response_length:
             response = pad_sequence_to_length(response, self.config.response_length, self.pad_token_id)
