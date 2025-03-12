@@ -611,7 +611,7 @@ class RayPPOTrainer(object):
 
         # we start from step 1
         self.global_steps += 1
-        print_batch = False  # 是否打印batch
+        print_batch = True  # 是否打印batch
         gen_from_api = False  # 是否从API获取生成的结果
 
         for epoch in range(self.config.trainer.total_epochs):
