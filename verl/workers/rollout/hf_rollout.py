@@ -39,7 +39,7 @@ class HFRollout(BaseRollout):
         self.config = config
         self.module = module
 
-    def generate_sequences(self, prompts: DataProto) -> DataProto:
+    def generate_sequences(self, prompts: DataProto, teacher_model={}) -> DataProto:
         batch_size = prompts.batch.batch_size[0]
         num_chunks = max(batch_size // self.config.get('micro_batch_size', batch_size), 1)
         batch_prompts = prompts.chunk(chunks=num_chunks)
@@ -48,7 +48,7 @@ class HFRollout(BaseRollout):
         return output
 
     @torch.no_grad()
-    def _generate_minibatch(self, prompts: DataProto) -> DataProto:
+    def _generate_minibatch(self, prompts: DataProto, teacher_model={}) -> DataProto:
         idx = prompts.batch['input_ids']  # (bs, prompt_length)
         print('inner_generate idx = ', idx)
         print('inner_generate type(idx) = ', type(idx))
@@ -82,26 +82,31 @@ class HFRollout(BaseRollout):
         if isinstance(self.module, FSDP):
             # recurse need to set to False according to https://github.com/pytorch/pytorch/issues/100069
             param_ctx = FSDP.summon_full_params(self.module, writeback=False, recurse=False)
-        with param_ctx:
-            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                output = self.module.generate(
-                    input_ids=idx,
-                    attention_mask=attention_mask,
-                    do_sample=do_sample,
-                    max_new_tokens=response_length,
-                    # max_length=max_length,
-                    eos_token_id=eos_token_id,
-                    pad_token_id=pad_token_id,
-                    generation_config=generation_config,
-                    # renormalize_logits=True,
-                    output_scores=False,  # this is potentially very large
-                    return_dict_in_generate=True,
-                    use_cache=True)
-        # TODO: filter out the seq with no answers like ds-chat
-        print('inner_generate output = ', output)
-        seq = output.sequences
-        print('inner_generate type(seq) = ', type(seq))
-        print('inner_generate seq = ', seq)
+        if teacher_model is None or teacher_model=={}:
+            with param_ctx:
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                    output = self.module.generate(
+                        input_ids=idx,
+                        attention_mask=attention_mask,
+                        do_sample=do_sample,
+                        max_new_tokens=response_length,
+                        # max_length=max_length,
+                        eos_token_id=eos_token_id,
+                        pad_token_id=pad_token_id,
+                        generation_config=generation_config,
+                        # renormalize_logits=True,
+                        output_scores=False,  # this is potentially very large
+                        return_dict_in_generate=True,
+                        use_cache=True)
+            # TODO: filter out the seq with no answers like ds-chat
+            print('inner_generate output = ', output)
+            seq = output.sequences
+            print('inner_generate type(seq) = ', type(seq))
+            print('inner_generate seq = ', seq)
+        else:
+            print('use teacher model')  # 增加使用API生成序列的方法
+            output = None
+            seq = None
 
         # huggingface generate will stop generating when all the batch reaches [EOS].
         # We have to pad to response_length

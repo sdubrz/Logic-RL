@@ -141,10 +141,15 @@ class vLLMRollout(BaseRollout):
     @torch.no_grad()
     def generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
         # rebuild vllm cache engine
+        print('vllm_generate by')
+        print('vllm_generate prompts = ', prompts)
+        print('vllm_generate kwargs = ', kwargs)
         if self.config.free_cache_engine:
             self.inference_engine.init_cache_engine()
 
         idx = prompts.batch['input_ids']  # (bs, prompt_length)
+        print('vllm_generate idx = ', idx)
+        print('vllm_generate type(idx) = ', type(idx))
         # left-padded attention_mask
         attention_mask = prompts.batch['attention_mask']
         position_ids = prompts.batch['position_ids']
@@ -155,9 +160,12 @@ class vLLMRollout(BaseRollout):
         batch_size = idx.size(0)
 
         idx_list = []
-        # parse idx from torch.Tensor to List[List[str]]
+        # parse idx from torch.Tensor to List[List[str]]  # idx可能是词表的ID，如果是的话，还需要还原成文本
         for i in range(batch_size):
             idx_list.append(_pre_process_inputs(self.pad_token_id, idx[i]))
+
+        print('vllm_generate idx_list = ', idx_list)
+        print('vllm_generate type(idx_list) = ', type(idx_list))
 
         do_sample = prompts.meta_info.get('do_sample', True)
         if not do_sample:
@@ -177,11 +185,14 @@ class vLLMRollout(BaseRollout):
                 sampling_params=self.sampling_params,
                 prompt_token_ids=idx_list,
                 use_tqdm=False)
+            # 这儿是推理
+            print('vllm_generate output = ', output)
+            print('vllm_generate type(output) = ', type(output))
 
         # TODO(sgm): disable logprob when recompute_log_prob is enable
         # if n = 1: (bs, response_length) ; if n > 1: (bs * n, response_length)
         response = output[0].to(idx.device)
-        log_probs = output[1].to(idx.device)
+        log_probs = output[1].to(idx.device)  # 实际上概率没有被用到
 
         if response.shape[1] < self.config.response_length:
             response = pad_sequence_to_length(response, self.config.response_length, self.pad_token_id)
