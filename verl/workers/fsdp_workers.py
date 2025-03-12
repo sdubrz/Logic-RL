@@ -401,12 +401,13 @@ class ActorRolloutRefWorker(Worker):
     def generate_sequences(self, prompts: DataProto):
         prompts = prompts.to('cuda')
         # set to False if it is validation
+        print('batch generate input_data = ', prompts)
         recompute_log_prob = prompts.meta_info.get('recompute_log_prob', True)
-        print('recompute_log_prob = ', recompute_log_prob)
+        print('batch generate recompute_log_prob = ', recompute_log_prob)
 
         assert self._is_rollout
         if self._is_offload_param:
-            print('is_offload_param = ', self._is_offload_param)
+            print('batch generate is_offload_param = ', self._is_offload_param)
             load_fsdp_param_and_grad(module=self.actor_module_fsdp,
                                      device_id=torch.cuda.current_device(),
                                      load_grad=self._is_offload_grad)
@@ -414,6 +415,7 @@ class ActorRolloutRefWorker(Worker):
         prompts.batch = prompts.batch.cuda()
         meta_info = {'eos_token_id': self.tokenizer.eos_token_id, 'pad_token_id': self.tokenizer.pad_token_id}
         prompts.meta_info.update(meta_info)
+        print('batch generate prompts.update_meta = ', prompts)
         with self.rollout_sharding_manager:
             log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
 
@@ -423,9 +425,11 @@ class ActorRolloutRefWorker(Worker):
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
             output = self.rollout_sharding_manager.postprocess_data(output)
+            print('batch generate output = ', output)
 
+        print('batch generate is_actor = ', self._is_actor)
+        print('batch generate self.recompute_log_prob = ', recompute_log_prob)
         if self._is_actor and recompute_log_prob:
-            print('is_actor = ', self._is_actor)
             # we should always recompute old_log_probs when it is HybridEngine
             output.meta_info['micro_batch_size'] = self.config.rollout.log_prob_micro_batch_size
             output.meta_info['max_token_len'] = self.config.rollout.log_prob_max_token_len_per_gpu
@@ -439,9 +443,10 @@ class ActorRolloutRefWorker(Worker):
                 output = self.ulysses_sharding_manager.postprocess_data(output)
 
         output = output.to('cpu')
+        print('batch generate output = ', output) 
 
+        print('batch generate is_offload_param = ', self._is_offload_param)
         if self._is_offload_param:
-            print('is_offload_param = ', self._is_offload_param)
             # NOTE(sgm): the grad is already in CPU, only offload param here
             offload_fsdp_param_and_grad(module=self.actor_module_fsdp, offload_grad=self._is_offload_grad)
         # clear kv cache

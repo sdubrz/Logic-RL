@@ -652,7 +652,7 @@ class RayPPOTrainer(object):
                         if gen_from_api:
                             gen_batch_output = self.get_gen_from_api(gen_batch)
                         else:
-                            gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                            gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)  # 调用policy model生成采样
                         # 从别处收集结果的实验
                         if print_batch:
                             print('type(gen_batch_out) = ', type(gen_batch_output))
