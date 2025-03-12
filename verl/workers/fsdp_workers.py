@@ -328,7 +328,7 @@ class ActorRolloutRefWorker(Worker):
                                               actor_module=self.actor_module_fsdp,
                                               actor_optimizer=self.actor_optimizer)
 
-        if self._is_rollout:
+        if self._is_rollout:  # 如果是一个rollout
             self.rollout, self.rollout_sharding_manager = self._build_rollout()
 
         if self._is_ref:
@@ -396,9 +396,23 @@ class ActorRolloutRefWorker(Worker):
             offload_fsdp_optimizer(optimizer=self.actor_optimizer)
         torch.cuda.empty_cache()
         return output
+    
+    def get_response_from_teacher(self, prompts: DataProto, teacher_model={}):
+        """
+        调用教师模型获取response
+        """
+        output = None 
+        assert 'model_name' in teacher_model and 'host_url' in teacher_model
+        model_name = teacher_model['model_name']
+        host_url = teacher_model['host_url']
+        ak = teacher_model.get('ak', 'tokenabc-123')
+        temperature = teacher_model.get('temperature', 1.0)
+
+        return output 
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
-    def generate_sequences(self, prompts: DataProto):
+    def generate_sequences(self, prompts: DataProto, teacher_model={}):
+        # teacher_model：教师模型的调用相关方法，包括host_url, model_name, ak, temperature等等
         prompts = prompts.to('cuda')
         # set to False if it is validation
         print('batch generate input_data = ', prompts)
@@ -420,7 +434,9 @@ class ActorRolloutRefWorker(Worker):
             log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
 
             prompts = self.rollout_sharding_manager.preprocess_data(prompts)
-            output = self.rollout.generate_sequences(prompts=prompts)
+            print('batch inner prompts = ', prompts)
+            output = self.rollout.generate_sequences(prompts=prompts)  # 生成句子，注意这里不是递归调用，是从另一个类生成
+            print('batch inner output = ', output)
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 

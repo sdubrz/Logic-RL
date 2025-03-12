@@ -50,6 +50,8 @@ class HFRollout(BaseRollout):
     @torch.no_grad()
     def _generate_minibatch(self, prompts: DataProto) -> DataProto:
         idx = prompts.batch['input_ids']  # (bs, prompt_length)
+        print('inner_generate idx = ', idx)
+        print('inner_generate type(idx) = ', type(idx))
         attention_mask = prompts.batch['attention_mask']  # left-padded attention_mask
         position_ids = prompts.batch['position_ids']
 
@@ -96,7 +98,10 @@ class HFRollout(BaseRollout):
                     return_dict_in_generate=True,
                     use_cache=True)
         # TODO: filter out the seq with no answers like ds-chat
+        print('inner_generate output = ', output)
         seq = output.sequences
+        print('inner_generate type(seq) = ', type(seq))
+        print('inner_generate seq = ', seq)
 
         # huggingface generate will stop generating when all the batch reaches [EOS].
         # We have to pad to response_length
@@ -110,6 +115,7 @@ class HFRollout(BaseRollout):
 
         assert seq.shape[1] == sequence_length
 
+        # 看起来seq是prompt+response，应该只需要把seq替换掉就可以了
         prompt = seq[:, :prompt_length]  # (bs, prompt_length)
         response = seq[:, prompt_length:]  # (bs, response_length)
 
